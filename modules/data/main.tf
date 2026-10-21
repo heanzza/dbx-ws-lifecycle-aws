@@ -121,6 +121,19 @@ resource "databricks_external_location" "this" {
   force_destroy   = true
 }
 
+# ワークスペースが新規作成された直後は UC の初期化待ちが必要。
+# triggers に workspace_id を入れているので、同じワークスペースに対しては
+# 2回目以降の apply で待ち直さない。
+resource "time_sleep" "uc_ready" {
+  count = var.uc_ready_wait_seconds > 0 ? 1 : 0
+
+  create_duration = "${var.uc_ready_wait_seconds}s"
+
+  triggers = {
+    workspace_id = var.workspace_id
+  }
+}
+
 # ---------------------------------------------------------------------------
 # カタログ / スキーマ / ボリューム
 # ---------------------------------------------------------------------------
@@ -141,6 +154,7 @@ resource "databricks_catalog" "this" {
   depends_on = [
     databricks_metastore_assignment.this,
     databricks_external_location.this,
+    time_sleep.uc_ready,
   ]
 }
 

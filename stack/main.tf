@@ -115,6 +115,7 @@ module "data" {
 
   warehouse_size           = var.warehouse_size
   warehouse_auto_stop_mins = var.warehouse_auto_stop_mins
+  uc_ready_wait_seconds    = var.uc_ready_wait_seconds
 
   users_group_name  = module.users.users_group_name
   admins_group_name = module.users.admins_group_name

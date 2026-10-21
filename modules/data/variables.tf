@@ -90,3 +90,13 @@ variable "iam_propagation_seconds" {
   type        = number
   default     = 30
 }
+
+variable "uc_ready_wait_seconds" {
+  description = <<-EOT
+    ワークスペース作成直後は Unity Catalog の初期化 (既定メタストアの割り当てと
+    既定カタログの作成) が完了していないことがあり、すぐにカタログを作ろうとすると失敗する。
+    初回 apply のときだけこの秒数だけ待つ。0 で無効。
+  EOT
+  type        = number
+  default     = 90
+}

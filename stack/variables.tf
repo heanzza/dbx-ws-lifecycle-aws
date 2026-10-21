@@ -204,3 +204,9 @@ variable "warehouse_auto_stop_mins" {
   type        = number
   default     = 10
 }
+
+variable "uc_ready_wait_seconds" {
+  description = "ワークスペース作成後、UC 初期化を待つ秒数 (初回 apply のみ)。0 で無効"
+  type        = number
+  default     = 90
+}

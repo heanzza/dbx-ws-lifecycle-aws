@@ -235,6 +235,10 @@ state が残っている環境は必ず `make down` / `make reap-apply` で消�
   リソースのみなら plan は通ることを確認済み。
 - **AWS プロバイダは未使用でも認証情報を要求する。** サーバーレス構成では AWS リソースを作らないので、
   `aws_unused` が真のときだけダミー認証情報と検証スキップを渡している (`stack/providers.tf`)。
+- **ワークスペース作成直後は UC の初期化が終わっていない。** 既定メタストアの割り当てと既定カタログの
+  作成が完了する前にカタログを作ろうとすると失敗するため、`time_sleep.uc_ready` で既定90秒待つ
+  (`uc_ready_wait_seconds` で調整、0で無効)。`triggers` に workspace_id を入れているので
+  2回目以降の apply では待ち直さない。
 - **IAM は結果整合。** HYBRID / UC ストレージ構成では IAM ロール作成後に `time_sleep` を挟んでいる
   (省くと credential 検証が `MALFORMED_REQUEST` で落ちる)。既定 30秒。
 - **`adopt_existing_users = true` は destroy でそのユーザーをアカウントから消す。**
