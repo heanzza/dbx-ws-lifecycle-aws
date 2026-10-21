@@ -47,3 +47,9 @@ output "seed_command" {
   description = "サンプルデータ投入コマンド"
   value       = "python3 seed/seed.py --host ${module.workspace.workspace_url} --warehouse-id ${module.data.warehouse_id} --catalog ${module.data.catalog_name} --schema ${module.data.schema_name}"
 }
+
+output "workspace_token" {
+  description = "ワークスペース用 PAT (databricks_cli_profile 利用時のみ)。seed スクリプトの認証に使う"
+  value       = module.workspace.workspace_token
+  sensitive   = true
+}

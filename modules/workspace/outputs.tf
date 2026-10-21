@@ -22,3 +22,9 @@ output "cross_account_role_arn" {
   description = "クロスアカウントIAMロールARN (HYBRID のみ)"
   value       = local.is_hybrid ? aws_iam_role.cross_account[0].arn : null
 }
+
+output "workspace_token" {
+  description = "ワークスペース用 PAT (create_token = true のときのみ)。ワークスペースプロバイダの認証に使う"
+  value       = var.create_token ? databricks_mws_workspaces.this.token[0].token_value : null
+  sensitive   = true
+}

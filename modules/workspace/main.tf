@@ -140,6 +140,15 @@ resource "databricks_mws_workspaces" "this" {
   storage_configuration_id = local.is_hybrid ? databricks_mws_storage_configurations.this[0].storage_configuration_id : null
   network_id               = local.is_hybrid ? var.network_id : null
 
+  # CLI プロファイル認証のときだけ、ワークスペース用の PAT を発行する
+  dynamic "token" {
+    for_each = var.create_token ? [1] : []
+    content {
+      comment          = "Terraform (${var.prefix})"
+      lifetime_seconds = var.token_lifetime_seconds
+    }
+  }
+
   timeouts {
     create = "60m"
   }

@@ -13,14 +13,38 @@ variable "databricks_account_id" {
 }
 
 variable "databricks_client_id" {
-  description = "アカウント管理者権限を持つサービスプリンシパルの client_id (OAuth M2M)"
+  description = "アカウント管理者権限を持つサービスプリンシパルの client_id (OAuth M2M)。databricks_cli_profile を使う場合は不要"
   type        = string
+  default     = null
 }
 
 variable "databricks_client_secret" {
   description = "同サービスプリンシパルの client_secret"
   type        = string
+  default     = null
   sensitive   = true
+}
+
+variable "databricks_cli_profile" {
+  description = <<-EOT
+    ローカル検証用。~/.databrickscfg の「アカウントレベル」プロファイル名を指定すると、
+    サービスプリンシパルを用意せずに自分のユーザー権限 (U2M OAuth) で実行できる。
+
+      databricks auth login --host https://accounts.cloud.databricks.com \
+        --account-id <ACCOUNT_ID> --profile <PROFILE>
+
+    この場合、作成直後のワークスペースに使える認証情報が他に無いため、
+    ワークスペース作成時に PAT を1本発行してワークスペースプロバイダに渡す。
+    CI や恒久運用ではサービスプリンシパル (client_id/client_secret) を使うこと。
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "token_lifetime_seconds" {
+  description = "databricks_cli_profile 利用時に発行する PAT の有効期間 (秒)"
+  type        = number
+  default     = 86400
 }
 
 # ---------------------------------------------------------------------------

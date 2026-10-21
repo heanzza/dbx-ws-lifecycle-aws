@@ -8,3 +8,6 @@ crash.log
 *.auto.tfvars
 secrets.tfvars
 .env
+
+# ローカル検証用環境 (アカウントIDを含むためコミットしない)
+envs/local-test/

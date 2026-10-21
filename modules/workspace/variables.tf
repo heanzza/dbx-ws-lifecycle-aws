@@ -64,3 +64,20 @@ variable "iam_propagation_seconds" {
   type        = number
   default     = 30
 }
+
+variable "create_token" {
+  description = <<-EOT
+    true にすると、ワークスペース作成時に PAT を1本発行する。
+    アカウント側を CLI プロファイル (U2M OAuth) で認証する場合、
+    作成直後のワークスペースに対して使える認証情報が他に無いため必要になる。
+    サービスプリンシパル (OAuth M2M) で認証する場合は不要。
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "token_lifetime_seconds" {
+  description = "発行する PAT の有効期間 (秒)。環境の寿命に合わせる"
+  type        = number
+  default     = 86400
+}

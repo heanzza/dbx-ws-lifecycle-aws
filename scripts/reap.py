@@ -53,6 +53,17 @@ def load_manifests(env_filter: str | None) -> list[dict]:
     return out
 
 
+def uses_cli_profile(env_name: str) -> bool:
+    """その環境が tfvars で CLI プロファイル認証を使っているか。"""
+    tfvars = REPO_ROOT / "envs" / env_name / "terraform.tfvars"
+    if not tfvars.exists():
+        return False
+    for line in tfvars.read_text().splitlines():
+        if line.strip().startswith("databricks_cli_profile"):
+            return True
+    return False
+
+
 def terraform(args: list[str], extra_env: dict | None = None) -> int:
     cmd = ["terraform", "-chdir=stack", *args]
     print(f"  $ {' '.join(cmd)}")
@@ -131,9 +142,12 @@ def main() -> int:
         print("削除対象: " + ", ".join(m["env_name"] for m in expired))
         return 0
 
+    # サービスプリンシパル認証の環境が1つでもあれば環境変数が必要
+    needs_sp = [m for m in expired if not uses_cli_profile(m["env_name"])]
     missing = [v for v in REQUIRED_TF_VARS if not os.environ.get(v)]
-    if missing:
+    if needs_sp and missing:
         print(f"\n環境変数が未設定です: {', '.join(missing)}", file=sys.stderr)
+        print(f"対象環境: {', '.join(m['env_name'] for m in needs_sp)}", file=sys.stderr)
         return 2
 
     failed = []

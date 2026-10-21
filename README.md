@@ -84,6 +84,42 @@ attendee01@example.com,参加者 01,false
 `admin = true` のユーザーは `<env>-admins` グループ経由でワークスペース管理者になります。
 tfvars の `users` に直接書くこともでき、CSV とマージされます (重複は tfvars 優先)。
 
+## ローカルで試す (サービスプリンシパル不要)
+
+自分のユーザー権限 (U2M OAuth) で動かせるので、サービスプリンシパルを用意する前に試せます。
+**アカウント管理者権限を持つユーザー**で、対象アカウントにログインしてください。
+
+```bash
+# 1. アカウントレベルのプロファイルを作る (ブラウザが開きます)
+databricks auth login \
+  --host https://accounts.cloud.databricks.com \
+  --account-id <ACCOUNT_ID> \
+  --profile acct-test
+
+# 2. 検証用の環境を用意する
+cp -r envs/workshop-sample envs/local-test
+cat >> envs/local-test/terraform.tfvars <<'EOT'
+databricks_cli_profile = "acct-test"
+databricks_account_id  = "<ACCOUNT_ID>"
+EOT
+# env_name / lifetime_days / users_csv_path も local-test 用に直す
+# (検証なので lifetime_days = 1、ユーザーは架空のテスト用メールだけにする)
+
+# 3. 実行
+make plan ENV=local-test
+make up   ENV=local-test
+make down ENV=local-test
+```
+
+仕組み: アカウントAPI はプロファイルで認証し、作成直後のワークスペースに対しては
+`databricks_mws_workspaces` の `token` ブロックで PAT を1本発行して、
+ワークスペースプロバイダと `seed.py` の認証に使います (既定の有効期間 24時間)。
+
+> 自分の実ユーザーを `users.csv` に入れないでください。`make down` でアカウントから
+> 削除されてしまいます。架空のテスト用メールアドレスを使ってください。
+
+CI や恒久運用ではサービスプリンシパル (`client_id` / `client_secret`) を使います。
+
 ## 使い方
 
 ```bash
@@ -161,6 +197,7 @@ state が残っている環境は必ず `make down` / `make reap-apply` で消�
 
 | 変数 | 既定値 | 説明 |
 |---|---|---|
+| `databricks_cli_profile` | `null` | 指定するとCLIプロファイル(U2M)で認証し、サービスプリンシパルが不要になる (ローカル検証用) |
 | `compute_mode` | `SERVERLESS` | `SERVERLESS` はサーバーレス専用WSで AWS リソース不要。`HYBRID` はクラシックコンピュート用に IAM ロールとルート S3 を作成 |
 | `lifetime_days` | `7` | 有効期間。1〜90 |
 | `pricing_tier` | `PREMIUM` | UC を使うため PREMIUM 以上 |
@@ -186,6 +223,9 @@ state が残っている環境は必ず `make down` / `make reap-apply` で消�
   既存の社内ユーザーを混ぜる場合は `delete_users_on_destroy = false` と併用すること。
 - **`force_destroy` を多用している。** 一時環境前提のため、カタログ・S3・外部ロケーションは
   中身ごと消える設定になっている。本番用に流用する場合は必ず外すこと。
+- **プロファイル認証では PAT が1本発行される。** アカウント側はプロファイルで認証できても、
+  作成直後のワークスペースに使える認証情報が他に無いため。アカウント設定で PAT が禁止されている
+  場合はこの経路は使えないので、サービスプリンシパルを使うこと。
 - **ワークスペースの削除は数分かかる。** destroy が途中で止まった場合は同じ `make down` を再実行すれば続行できる。
 
 ## 検証状況

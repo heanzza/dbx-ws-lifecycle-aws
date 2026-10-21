@@ -16,21 +16,29 @@ provider "aws" {
 }
 
 # アカウントレベル API (ワークスペース作成・ユーザー・権限割り当て)
+#
+# 認証は2通り:
+#   1) サービスプリンシパル (OAuth M2M) ... CI / 恒久運用向け。既定
+#   2) CLI プロファイル (U2M OAuth)      ... ローカル検証向け。databricks_cli_profile を指定
 provider "databricks" {
   alias = "account"
 
-  host          = var.databricks_account_host
-  account_id    = var.databricks_account_id
-  client_id     = var.databricks_client_id
-  client_secret = var.databricks_client_secret
+  profile       = var.databricks_cli_profile
+  host          = local.use_profile_auth ? null : var.databricks_account_host
+  account_id    = local.use_profile_auth ? null : var.databricks_account_id
+  client_id     = local.use_profile_auth ? null : var.databricks_client_id
+  client_secret = local.use_profile_auth ? null : var.databricks_client_secret
 }
 
 # 作成直後のワークスペースを指すプロバイダ。
 # host は apply 時まで未確定だが、データソースを使わない限り plan は通る。
+# プロファイル認証の場合は、プロファイルが別ホスト (アカウントコンソール) を指しているため
+# そのままでは使えない。作成時に発行した PAT で認証する。
 provider "databricks" {
   alias = "workspace"
 
   host          = module.workspace.workspace_url
-  client_id     = var.databricks_client_id
-  client_secret = var.databricks_client_secret
+  token         = local.use_profile_auth ? module.workspace.workspace_token : null
+  client_id     = local.use_profile_auth ? null : var.databricks_client_id
+  client_secret = local.use_profile_auth ? null : var.databricks_client_secret
 }

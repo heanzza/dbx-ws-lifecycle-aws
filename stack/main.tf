@@ -5,6 +5,9 @@
 resource "time_static" "created" {}
 
 locals {
+  # CLI プロファイル認証か、サービスプリンシパル認証か
+  use_profile_auth = var.databricks_cli_profile != null
+
   created_at = time_static.created.rfc3339
   expires_at = timeadd(time_static.created.rfc3339, "${var.lifetime_days * 24}h")
 
@@ -62,6 +65,10 @@ module "workspace" {
 
   custom_tags = local.tags
   aws_tags    = local.tags
+
+  # プロファイル認証のときだけ、ワークスペース用 PAT を発行する
+  create_token           = local.use_profile_auth
+  token_lifetime_seconds = var.token_lifetime_seconds
 }
 
 # ---------------------------------------------------------------------------
@@ -140,4 +147,20 @@ resource "local_file" "manifest" {
     admins_group   = module.users.admins_group_name
     user_count     = length(local.all_users)
   })
+}
+
+# ---------------------------------------------------------------------------
+# 認証情報の指定漏れを apply 前に弾く
+# ---------------------------------------------------------------------------
+check "auth_configured" {
+  assert {
+    condition = var.databricks_cli_profile != null || (
+      var.databricks_client_id != null && var.databricks_client_secret != null
+    )
+    error_message = join("", [
+      "認証情報がありません。次のどちらかを設定してください: ",
+      "(1) databricks_cli_profile にアカウントレベルのCLIプロファイル名、",
+      "(2) TF_VAR_databricks_client_id と TF_VAR_databricks_client_secret。",
+    ])
+  }
 }

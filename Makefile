@@ -27,11 +27,23 @@ help:
 check-env:
 	@test -f "$(ENV_DIR)/terraform.tfvars" || { echo "ERROR: $(ENV_DIR)/terraform.tfvars がありません。envs/workshop-sample をコピーしてください。"; exit 1; }
 
+# 認証はサービスプリンシパル (環境変数) か、tfvars の databricks_cli_profile のどちらか
 check-creds:
-	@for v in TF_VAR_databricks_account_id TF_VAR_databricks_client_id TF_VAR_databricks_client_secret; do \
-		eval "val=\$$$$v"; \
-		if [ -z "$$val" ]; then echo "ERROR: 環境変数 $$v が未設定です"; exit 1; fi; \
-	done
+	@if grep -qE '^[[:space:]]*databricks_cli_profile[[:space:]]*=' "$(ENV_DIR)/terraform.tfvars" 2>/dev/null; then \
+		prof=$$(grep -E '^[[:space:]]*databricks_cli_profile[[:space:]]*=' "$(ENV_DIR)/terraform.tfvars" | head -1 | sed -E 's/.*=[[:space:]]*"([^"]*)".*/\1/'); \
+		if ! databricks auth env --profile "$$prof" >/dev/null 2>&1; then \
+			echo "ERROR: CLIプロファイル '$$prof' が未認証です。次を実行してください:"; \
+			echo "  databricks auth login --host https://accounts.cloud.databricks.com --account-id <ACCOUNT_ID> --profile $$prof"; \
+			exit 1; \
+		fi; \
+		echo "認証: CLIプロファイル '$$prof' を使用"; \
+	else \
+		for v in TF_VAR_databricks_account_id TF_VAR_databricks_client_id TF_VAR_databricks_client_secret; do \
+			eval "val=\$$$$v"; \
+			if [ -z "$$val" ]; then echo "ERROR: 環境変数 $$v が未設定です (または tfvars に databricks_cli_profile を設定)"; exit 1; fi; \
+		done; \
+		echo "認証: サービスプリンシパル (OAuth M2M) を使用"; \
+	fi
 
 init: check-env ## Terraform を初期化する (環境ごとに state を分ける)
 	$(TF) init -reconfigure -input=false $(INIT_BACKEND)
@@ -50,7 +62,16 @@ apply: init check-creds ## WS・ユーザー・カタログを作成する (デ�
 	$(TF) apply -auto-approve -input=false -var-file=$(VAR_FILE)
 
 seed: ## サンプルデータを投入する (apply 済みが前提)
-	@python3 seed/seed.py \
+	@tok="$$($(TF) output -raw workspace_token 2>/dev/null || true)"; \
+	if [ -n "$$tok" ] && [ "$$tok" != "null" ]; then \
+		export DATABRICKS_TOKEN="$$tok"; \
+		echo "seed 認証: apply 時に発行した PAT を使用"; \
+	else \
+		export DATABRICKS_CLIENT_ID="$${DATABRICKS_CLIENT_ID:-$$TF_VAR_databricks_client_id}"; \
+		export DATABRICKS_CLIENT_SECRET="$${DATABRICKS_CLIENT_SECRET:-$$TF_VAR_databricks_client_secret}"; \
+		echo "seed 認証: サービスプリンシパル (OAuth M2M) を使用"; \
+	fi; \
+	python3 seed/seed.py \
 		--host "$$($(TF) output -raw workspace_url)" \
 		--warehouse-id "$$($(TF) output -raw warehouse_id)" \
 		--catalog "$$($(TF) output -raw catalog_name)" \
