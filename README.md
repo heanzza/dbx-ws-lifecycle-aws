@@ -220,6 +220,8 @@ state が残っている環境は必ず `make down` / `make reap-apply` で消�
 | `lifetime_days` | `7` | 有効期間。1〜90 |
 | `pricing_tier` | `PREMIUM` | UC を使うため PREMIUM 以上 |
 | `deployment_name` | `null` | WS URL のサブドメイン。`null` で自動採番 |
+| `catalog_mode` | `create` | `create` / `workspace_default` / `existing`。**アカウントで Default Storage が有効な場合は `workspace_default` が必要** (下記参照) |
+| `existing_catalog_name` | `null` | `catalog_mode = "existing"` のときに使うカタログ名 |
 | `metastore_id` | `null` | `null` なら既定メタストアの自動割当に任せる |
 | `create_catalog_storage` | `false` | カタログ専用 S3 + UC IAM ロール + 外部ロケーションを作る |
 | `adopt_existing_users` | `false` | 既存アカウントユーザーを管理下に取り込む |
@@ -235,6 +237,28 @@ state が残っている環境は必ず `make down` / `make reap-apply` で消�
   リソースのみなら plan は通ることを確認済み。
 - **AWS プロバイダは未使用でも認証情報を要求する。** サーバーレス構成では AWS リソースを作らないので、
   `aws_unused` が真のときだけダミー認証情報と検証スキップを渡している (`stack/providers.tf`)。
+- **Default Storage が有効なアカウントでは、カタログを API から新規作成できない。**
+  メタストアにルートストレージが無く Default Storage が使われている場合、カタログ作成は
+  次のエラーになる (実機で確認):
+
+  ```
+  cannot create catalog: Metastore storage root URL does not exist.
+  Default Storage is enabled in your account. You can use the UI to create a new catalog
+  using Default Storage, or please provide a storage location for the catalog
+  ```
+
+  既定ストレージのパスを `storage_root` に明示しても `Please use the UI to create a catalog
+  with Default Storage.` で拒否されます。UI 専用の操作なので、Terraform からは次のどちらかを選びます。
+
+  | 選択肢 | 設定 | 備考 |
+  |---|---|---|
+  | ワークスペース既定カタログを使う | `catalog_mode = "workspace_default"` | **推奨。** ワークスペース作成時に `<ワークスペース名>` のカタログが Default Storage 付きで自動生成されるので、その中にスキーマとボリュームを作る。AWS 認証情報は不要 |
+  | 自前のS3を用意する | `create_catalog_storage = true` | カタログ専用の S3 + UC IAMロールを作る。AWS 認証情報が必要 |
+
+  `workspace_default` のとき、カタログには `databricks_grant` (単数) で `USE_CATALOG` だけを
+  追加します。`databricks_grants` (複数) は securable 上の付与を総入れ替えしてしまうため、
+  自分が作ったものではないカタログには使いません。
+
 - **ワークスペース作成直後は UC の初期化が終わっていない。** 既定メタストアの割り当てと既定カタログの
   作成が完了する前にカタログを作ろうとすると失敗するため、`time_sleep.uc_ready` で既定90秒待つ
   (`uc_ready_wait_seconds` で調整、0で無効)。`triggers` に workspace_id を入れているので
@@ -259,5 +283,12 @@ state が残っている環境は必ず `make down` / `make reap-apply` で消�
   - `create_catalog_storage = true` → 31 リソース (`aws_caller_identity` の読み取りのみ実 AWS 認証が必要)
 - `seed/seed.py --dry-run`: データ生成と CSV 出力を確認済み
 - `scripts/reap.py`: 期限判定とドライラン出力を確認済み
-- **未実施**: 実アカウントでの `apply` / `destroy` の通し実行。初回は検証用アカウントで
-  `lifetime_days = 1`、ユーザー 1〜2名から試してください。
+実アカウント (AWS / ap-northeast-1 / サーバーレス専用WS) での `apply` 実機確認:
+
+- ワークスペース作成 → OK (Provisioning から Running まで約10分)
+- アカウントユーザー2名・グループ2つ・ワークスペース割り当て・エンタイトルメント → OK
+- SQL ウェアハウス + 権限 → OK
+- CLI プロファイル (U2M) 認証と、そこから発行した PAT によるワークスペースAPI操作 → OK
+- カタログ新規作成 → **Default Storage 有効アカウントでは不可**。`catalog_mode = "workspace_default"`
+  で既定カタログ内にスキーマ/ボリュームを作る経路に切り替えて解決
+- **未実施**: `destroy` の通し実行、`seed` の実機実行、HYBRID 構成、`create_catalog_storage = true`

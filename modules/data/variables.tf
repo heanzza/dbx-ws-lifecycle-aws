@@ -14,8 +14,36 @@ variable "prefix" {
 }
 
 variable "catalog_name" {
-  description = "作成する UC カタログ名"
+  description = "作成する UC カタログ名 (catalog_mode = \"create\" のとき)"
   type        = string
+}
+
+variable "catalog_mode" {
+  description = <<-EOT
+    カタログの扱い方。
+
+      create            : 新規カタログを作る (既定)。メタストアにルートストレージがあるか、
+                          create_catalog_storage = true が必要
+      workspace_default : ワークスペース作成時に自動生成される既定カタログを使う。
+                          アカウントで Default Storage が有効な場合、API からは
+                          Default Storage のカタログを新規作成できないため、こちらを使う
+      existing          : existing_catalog_name で指定した既存カタログを使う
+
+    create 以外では、カタログは作らずスキーマとボリュームだけをそのカタログ内に作る。
+  EOT
+  type        = string
+  default     = "create"
+
+  validation {
+    condition     = contains(["create", "workspace_default", "existing"], var.catalog_mode)
+    error_message = "catalog_mode は create / workspace_default / existing のいずれかです。"
+  }
+}
+
+variable "existing_catalog_name" {
+  description = "catalog_mode が create 以外のときに使うカタログ名"
+  type        = string
+  default     = null
 }
 
 variable "schema_name" {

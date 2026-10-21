@@ -4,6 +4,10 @@
 locals {
   create_storage = var.create_catalog_storage
 
+  # 新規カタログを作るか、既存カタログ (ワークスペース既定カタログ等) を使うか
+  create_catalog = var.catalog_mode == "create"
+  target_catalog = local.create_catalog ? databricks_catalog.this[0].name : var.existing_catalog_name
+
   bucket_name  = "${substr(var.prefix, 0, 40)}-uc-${random_string.suffix.result}"
   uc_role_name = "${var.prefix}-uc-access"
   storage_root = local.create_storage ? "s3://${aws_s3_bucket.catalog[0].bucket}/catalog" : null
@@ -139,6 +143,7 @@ resource "time_sleep" "uc_ready" {
 # ---------------------------------------------------------------------------
 resource "databricks_catalog" "this" {
   provider = databricks.workspace
+  count    = local.create_catalog ? 1 : 0
 
   name         = var.catalog_name
   comment      = "Managed by ${var.prefix} (ephemeral environment)"
@@ -161,7 +166,7 @@ resource "databricks_catalog" "this" {
 resource "databricks_schema" "this" {
   provider = databricks.workspace
 
-  catalog_name  = databricks_catalog.this.name
+  catalog_name  = local.target_catalog
   name          = var.schema_name
   comment       = "サンプルデータ"
   force_destroy = true
@@ -170,7 +175,7 @@ resource "databricks_schema" "this" {
 resource "databricks_volume" "landing" {
   provider = databricks.workspace
 
-  catalog_name = databricks_catalog.this.name
+  catalog_name = local.target_catalog
   schema_name  = databricks_schema.this.name
   name         = var.volume_name
   volume_type  = "MANAGED"
@@ -182,7 +187,8 @@ resource "databricks_volume" "landing" {
 # ---------------------------------------------------------------------------
 resource "databricks_grants" "catalog" {
   provider = databricks.workspace
-  catalog  = databricks_catalog.this.name
+  count    = local.create_catalog ? 1 : 0
+  catalog  = databricks_catalog.this[0].name
 
   grant {
     principal  = var.admins_group_name
@@ -193,6 +199,44 @@ resource "databricks_grants" "catalog" {
     principal = var.users_group_name
     privileges = [
       "USE_CATALOG",
+      "USE_SCHEMA",
+      "SELECT",
+      "READ_VOLUME",
+      "EXECUTE",
+    ]
+  }
+}
+
+# 既存カタログを使う場合:
+#   - カタログには databricks_grant (単数) で USE_CATALOG だけを追加する。
+#     databricks_grants (複数) は securable 上の付与を総入れ替えしてしまうため、
+#     自分が作ったものではないカタログには使わない。
+#   - スキーマは自分が作ったものなので、こちらは authoritative に設定してよい。
+resource "databricks_grant" "existing_catalog_use" {
+  provider = databricks.workspace
+  for_each = local.create_catalog ? {} : {
+    admins = var.admins_group_name
+    users  = var.users_group_name
+  }
+
+  catalog    = local.target_catalog
+  principal  = each.value
+  privileges = ["USE_CATALOG"]
+}
+
+resource "databricks_grants" "schema" {
+  provider = databricks.workspace
+  count    = local.create_catalog ? 0 : 1
+  schema   = "${local.target_catalog}.${databricks_schema.this.name}"
+
+  grant {
+    principal  = var.admins_group_name
+    privileges = ["ALL_PRIVILEGES"]
+  }
+
+  grant {
+    principal = var.users_group_name
+    privileges = [
       "USE_SCHEMA",
       "SELECT",
       "READ_VOLUME",

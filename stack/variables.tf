@@ -175,6 +175,27 @@ variable "catalog_name" {
   default     = null
 }
 
+variable "catalog_mode" {
+  description = <<-EOT
+    カタログの扱い方。
+
+      create            : 新規カタログを作る (既定)
+      workspace_default : ワークスペース作成時に自動生成される既定カタログ
+                          (ワークスペース名のハイフンをアンダースコアにしたもの) を使う。
+                          アカウントで Default Storage が有効な場合、API からは
+                          Default Storage のカタログを新規作成できないためこちらを使う
+      existing          : existing_catalog_name で指定した既存カタログを使う
+  EOT
+  type        = string
+  default     = "create"
+}
+
+variable "existing_catalog_name" {
+  description = "catalog_mode = \"existing\" のときに使うカタログ名"
+  type        = string
+  default     = null
+}
+
 variable "metastore_id" {
   description = "メタストアID。null なら自動割当に任せる"
   type        = string

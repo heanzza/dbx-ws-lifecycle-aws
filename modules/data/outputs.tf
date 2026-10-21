@@ -1,6 +1,6 @@
 output "catalog_name" {
-  description = "作成した UC カタログ名"
-  value       = databricks_catalog.this.name
+  description = "サンプルデータを置いた UC カタログ名 (新規作成または既存)"
+  value       = local.target_catalog
 }
 
 output "schema_name" {

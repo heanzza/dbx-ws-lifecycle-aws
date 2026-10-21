@@ -17,6 +17,14 @@ locals {
   prefix       = var.env_name
   catalog_name = coalesce(var.catalog_name, "${replace(var.env_name, "-", "_")}_demo")
 
+  # workspace_default の場合、既定カタログ名はワークスペース名のハイフンを
+  # アンダースコアに変えたもの (例: tftest-ws -> tftest_ws)
+  effective_existing_catalog = (
+    var.catalog_mode == "workspace_default"
+    ? replace("${var.env_name}-ws", "-", "_")
+    : var.existing_catalog_name
+  )
+
   tags = merge(var.extra_tags, {
     managed_by = "dbx-ws-lifecycle"
     env        = var.env_name
@@ -108,7 +116,10 @@ module "data" {
   workspace_id = module.workspace.workspace_id
   prefix       = local.prefix
 
-  catalog_name           = local.catalog_name
+  catalog_name          = local.catalog_name
+  catalog_mode          = var.catalog_mode
+  existing_catalog_name = local.effective_existing_catalog
+
   metastore_id           = var.metastore_id
   default_catalog_name   = var.default_catalog_name
   create_catalog_storage = var.create_catalog_storage
@@ -163,5 +174,14 @@ check "auth_configured" {
       "(1) databricks_cli_profile にアカウントレベルのCLIプロファイル名、",
       "(2) TF_VAR_databricks_client_id と TF_VAR_databricks_client_secret。",
     ])
+  }
+}
+
+check "catalog_mode_configured" {
+  assert {
+    condition = contains(["create", "workspace_default", "existing"], var.catalog_mode) && (
+      var.catalog_mode != "existing" || var.existing_catalog_name != null
+    )
+    error_message = "catalog_mode は create / workspace_default / existing のいずれかで、existing の場合は existing_catalog_name が必要です。"
   }
 }
