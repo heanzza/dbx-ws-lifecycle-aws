@@ -1,0 +1,8 @@
+# stack/backend.tf の backend "local" を backend "s3" に差し替えたうえで、
+#   make init ENV=workshop-sample BACKEND_CONFIG=../envs/workshop-sample/backend.hcl
+# のように渡す。CI から自動削除を回す場合はこちらを使う。
+bucket       = "my-terraform-state"
+key          = "dbx-ws-lifecycle/workshop-sample.tfstate"
+region       = "ap-northeast-1"
+encrypt      = true
+use_lockfile = true

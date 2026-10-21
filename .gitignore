@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+.terraform.tfstate.lock.info
+
+# 認証情報は絶対にコミットしない
+*.auto.tfvars
+secrets.tfvars
+.env

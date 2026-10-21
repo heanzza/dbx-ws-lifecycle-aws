@@ -1,0 +1,66 @@
+name: reap-expired-environments
+
+# 期限切れ環境の自動削除。
+# 前提:
+#   1) stack/backend.tf の backend を "s3" に差し替え、envs/<ENV>/backend.hcl を用意する
+#      (ローカルstateはリポジトリにコミットされないため、CI から destroy できない)
+#   2) envs/<ENV>/manifest.json をコミットする (reaper の期限判定に使う)
+#   3) 下記 secrets を設定する
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # UTC 18:00 = JST 翌日 03:00
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true なら一覧表示のみ"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # AWS を OIDC で引く場合に使う
+
+jobs:
+  reap:
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_databricks_account_id: ${{ secrets.DATABRICKS_ACCOUNT_ID }}
+      TF_VAR_databricks_client_id: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      TF_VAR_databricks_client_secret: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      DATABRICKS_ACCOUNT_ID: ${{ secrets.DATABRICKS_ACCOUNT_ID }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # HYBRID / create_catalog_storage を使う環境がある場合のみ必要
+      - name: Configure AWS credentials
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.0
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install "databricks-sdk>=0.40"
+
+      - name: 期限切れ環境の一覧
+        run: python3 scripts/reap.py
+
+      - name: 期限切れ環境を削除
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run == false }}
+        run: python3 scripts/reap.py --yes
+
+      - name: state 外のみなしご環境を報告
+        if: always()
+        run: python3 scripts/orphan_scan.py

@@ -1,0 +1,5 @@
+user_name,display_name,admin
+lead@example.com,講師 太郎,true
+attendee01@example.com,参加者 01,false
+attendee02@example.com,参加者 02,false
+attendee03@example.com,参加者 03,false

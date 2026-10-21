@@ -1,0 +1,201 @@
+# Databricks ワークスペース ライフサイクル自動化 (AWS / Terraform)
+
+一時的な Databricks ワークスペースを **作成 → ユーザー自動追加 → サンプルデータ投入 → まとめて自動削除**
+するための Terraform 雛形です。ワークショップ・PoC・検証環境の使い捨て運用を想定しています。
+
+```
+make up   ENV=workshop-sample    # 作成 + ユーザー追加 + データ投入 (1コマンド)
+make down ENV=workshop-sample    # ワークスペース・ユーザー・データを全削除
+make reap                        # 期限切れ環境を一覧 (削除は reap-apply)
+```
+
+## 何が作られるか
+
+| レイヤ | リソース | 削除時の扱い |
+|---|---|---|
+| ワークスペース | `databricks_mws_workspaces` (+ HYBRID 時はクロスアカウントIAMロール / ルートS3) | destroy で削除。S3 は `force_destroy` で中身ごと |
+| ユーザー | アカウントユーザー、`<env>-users` / `<env>-admins` グループ、ワークスペース割り当て、エンタイトルメント | destroy で削除 (ホームディレクトリ・Repos も削除) |
+| データ | UC カタログ / スキーマ / ボリューム、SQL ウェアハウス、権限付与 | カタログは `force_destroy` なので投入したテーブルごと削除 |
+| 期限管理 | ワークスペースの `custom_tags` と `envs/<ENV>/manifest.json` に `expires_at` を記録 | reaper が期限切れを検出して destroy |
+
+サンプルデータは日本語の小売データ (顧客 2,000 / 商品 60 / 取引 50,000 + 都道府県別日次売上ビュー) です。
+
+## 構成
+
+```
+.
+├── Makefile                      # 入口。up / down / reap など
+├── stack/                        # Terraform ルート (コードは1本)
+│   ├── providers.tf              #   account / workspace の2段プロバイダ
+│   ├── main.tf                   #   3モジュールの合成 + 期限 + manifest 出力
+│   └── backend.tf                #   既定はローカルstate。CI では S3 に差し替え
+├── modules/
+│   ├── workspace/                # ワークスペース本体 (+ HYBRID 用 AWS リソース)
+│   ├── users/                    # ユーザー・グループ・割り当て・エンタイトルメント
+│   └── data/                     # UC カタログ/スキーマ/ボリューム/ウェアハウス/権限
+├── envs/<ENV>/                   # 環境ごとの tfvars・users.csv・state・manifest.json
+├── seed/seed.py                  # サンプルデータ投入 (CSV → ボリューム → Delta)
+├── scripts/reap.py               # 期限切れ環境を terraform destroy
+├── scripts/orphan_scan.py        # state から外れた環境の洗い出し
+└── .github/workflows/reap.yml    # 期限切れ自動削除 (日次)
+```
+
+環境を増やすときは `envs/` 配下をコピーするだけで、Terraform コード自体は共通のまま使えます。
+state は環境ごとに分かれます (`envs/<ENV>/terraform.tfstate`)。
+
+## 事前準備
+
+### 1. 必要なもの
+
+- Terraform >= 1.5 (検証は 1.15.0)
+- Python 3.9+ と `pip install "databricks-sdk>=0.40"`
+- **アカウント管理者権限を持つサービスプリンシパル** (OAuth M2M の client_id / client_secret)
+  - アカウントコンソール → User management → Service principals → OAuth secrets で発行
+  - ワークスペース作成・ユーザー管理・権限割り当てに必要
+- AWS 認証情報は **`compute_mode = "HYBRID"` または `create_catalog_storage = true` のときだけ** 必要
+  (サーバーレス専用ワークスペースなら AWS 側にリソースを作らないため不要)
+
+### 2. 認証情報を環境変数で渡す
+
+```bash
+export TF_VAR_databricks_account_id='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+export TF_VAR_databricks_client_id='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+export TF_VAR_databricks_client_secret='dose...'
+```
+
+tfvars には書かないでください (`.gitignore` 済みですが事故防止のため)。
+
+### 3. 環境を定義する
+
+```bash
+cp -r envs/workshop-sample envs/my-workshop
+vi envs/my-workshop/terraform.tfvars   # env_name, owner, lifetime_days など
+vi envs/my-workshop/users.csv          # 参加者のメールアドレス
+```
+
+`users.csv` の形式:
+
+```csv
+user_name,display_name,admin
+lead@example.com,講師 太郎,true
+attendee01@example.com,参加者 01,false
+```
+
+`admin = true` のユーザーは `<env>-admins` グループ経由でワークスペース管理者になります。
+tfvars の `users` に直接書くこともでき、CSV とマージされます (重複は tfvars 優先)。
+
+## 使い方
+
+```bash
+# 差分確認
+make plan ENV=my-workshop
+
+# 作成 + ユーザー追加 + サンプルデータ投入
+make up ENV=my-workshop
+
+# データ量を変えたいとき (0.1 = 1/10)
+make seed ENV=my-workshop SEED_SCALE=0.1
+
+# 出力値 (ワークスペースURL、カタログ名、期限など)
+make outputs ENV=my-workshop
+
+# 全削除
+make down ENV=my-workshop
+```
+
+`make up` 後の出力例:
+
+```
+workspace_url    = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+catalog_name     = "my_workshop_demo"
+warehouse_id     = "abc123def456"
+users_group_name = "my-workshop-users"
+expires_at       = "2026-10-28T09:00:00Z"
+```
+
+## 自動削除 (reaper)
+
+有効期限は `lifetime_days` (既定 7日) で決まり、apply 時刻から計算されて 2箇所に記録されます。
+
+- ワークスペースの `custom_tags.expires_at`
+- `envs/<ENV>/manifest.json`
+
+### ローカル / cron から
+
+```bash
+make reap          # 一覧と判定のみ (ドライラン)
+make reap-apply    # 期限切れを terraform destroy
+```
+
+cron 例 (毎朝3時):
+
+```cron
+0 3 * * * cd /path/to/dbx-ws-lifecycle-aws && \
+  TF_VAR_databricks_account_id=... TF_VAR_databricks_client_id=... TF_VAR_databricks_client_secret=... \
+  make reap-apply >> /tmp/dbx-reap.log 2>&1
+```
+
+### GitHub Actions から
+
+`.github/workflows/reap.yml` が日次で走ります。CI から動かすには:
+
+1. `stack/backend.tf` の `backend "local"` を `backend "s3"` に差し替える
+   (ローカル state はコミットされないため、CI からは destroy できません)
+2. `envs/<ENV>/backend.hcl` を用意し、`make init BACKEND_CONFIG=../envs/<ENV>/backend.hcl` で初期化
+3. `envs/<ENV>/manifest.json` をコミットする (期限判定に使う)
+4. Secrets に `DATABRICKS_ACCOUNT_ID` / `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` を設定
+   (HYBRID を使う場合は Variables に `AWS_ROLE_TO_ASSUME` も)
+
+### state を失った場合
+
+```bash
+python3 scripts/orphan_scan.py                  # managed_by タグで洗い出して報告
+python3 scripts/orphan_scan.py --delete         # ワークスペースとグループを削除
+python3 scripts/orphan_scan.py --delete --delete-users  # ユーザーも削除
+```
+
+state が残っている環境は必ず `make down` / `make reap-apply` で消してください。
+`orphan_scan.py --delete` で消すと state が不整合になります。
+
+## 主な設定項目
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `compute_mode` | `SERVERLESS` | `SERVERLESS` はサーバーレス専用WSで AWS リソース不要。`HYBRID` はクラシックコンピュート用に IAM ロールとルート S3 を作成 |
+| `lifetime_days` | `7` | 有効期間。1〜90 |
+| `pricing_tier` | `PREMIUM` | UC を使うため PREMIUM 以上 |
+| `deployment_name` | `null` | WS URL のサブドメイン。`null` で自動採番 |
+| `metastore_id` | `null` | `null` なら既定メタストアの自動割当に任せる |
+| `create_catalog_storage` | `false` | カタログ専用 S3 + UC IAM ロール + 外部ロケーションを作る |
+| `adopt_existing_users` | `false` | 既存アカウントユーザーを管理下に取り込む |
+| `delete_users_on_destroy` | `true` | `false` にすると destroy ではユーザーを無効化するだけ |
+| `warehouse_auto_stop_mins` | `10` | コスト抑制のため短め |
+
+## 設計上の注意点・ハマりどころ
+
+- **`compute_mode` に `"HYBRID"` を直接渡せない。** プロバイダは `"SERVERLESS"` のみを許すため、
+  クラシック構成では `compute_mode` を未指定 (null) にする必要がある。モジュール内でその変換をしている。
+- **ワークスペース用プロバイダの `host` は apply 時まで未確定。** そのため
+  ワークスペースプロバイダで **データソースを使ってはいけない** (plan が失敗する)。
+  リソースのみなら plan は通ることを確認済み。
+- **AWS プロバイダは未使用でも認証情報を要求する。** サーバーレス構成では AWS リソースを作らないので、
+  `aws_unused` が真のときだけダミー認証情報と検証スキップを渡している (`stack/providers.tf`)。
+- **IAM は結果整合。** HYBRID / UC ストレージ構成では IAM ロール作成後に `time_sleep` を挟んでいる
+  (省くと credential 検証が `MALFORMED_REQUEST` で落ちる)。既定 30秒。
+- **`adopt_existing_users = true` は destroy でそのユーザーをアカウントから消す。**
+  既存の社内ユーザーを混ぜる場合は `delete_users_on_destroy = false` と併用すること。
+- **`force_destroy` を多用している。** 一時環境前提のため、カタログ・S3・外部ロケーションは
+  中身ごと消える設定になっている。本番用に流用する場合は必ず外すこと。
+- **ワークスペースの削除は数分かかる。** destroy が途中で止まった場合は同じ `make down` を再実行すれば続行できる。
+
+## 検証状況
+
+- `terraform validate`: PASS
+- `terraform plan` (ダミー認証情報、API 呼び出しなし):
+  - `SERVERLESS` + `create_catalog_storage = false` → 24 リソース、エラーなし
+  - `HYBRID` → 33 リソース、エラーなし
+  - `create_catalog_storage = true` → 31 リソース (`aws_caller_identity` の読み取りのみ実 AWS 認証が必要)
+- `seed/seed.py --dry-run`: データ生成と CSV 出力を確認済み
+- `scripts/reap.py`: 期限判定とドライラン出力を確認済み
+- **未実施**: 実アカウントでの `apply` / `destroy` の通し実行。初回は検証用アカウントで
+  `lifetime_days = 1`、ユーザー 1〜2名から試してください。
