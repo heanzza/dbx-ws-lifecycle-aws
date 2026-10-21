@@ -40,7 +40,13 @@ check-creds:
 	else \
 		for v in TF_VAR_databricks_account_id TF_VAR_databricks_client_id TF_VAR_databricks_client_secret; do \
 			eval "val=\$$$$v"; \
-			if [ -z "$$val" ]; then echo "ERROR: 環境変数 $$v が未設定です (または tfvars に databricks_cli_profile を設定)"; exit 1; fi; \
+			if [ -z "$$val" ]; then \
+				echo "ERROR: 環境 '$(ENV)' の認証情報がありません。"; \
+				echo "  (a) $(ENV_DIR)/terraform.tfvars に databricks_cli_profile を設定する"; \
+				echo "  (b) TF_VAR_databricks_account_id / _client_id / _client_secret を環境変数で渡す"; \
+				echo "  未設定の変数: $$v"; \
+				exit 1; \
+			fi; \
 		done; \
 		echo "認証: サービスプリンシパル (OAuth M2M) を使用"; \
 	fi
