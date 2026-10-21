@@ -1,0 +1,18 @@
+{
+  "terraform.languageServer.enable": true,
+  // 言語サーバにルートモジュールの位置を教える (stack/ がルート)
+  "terraform.languageServer.rootModules": ["./stack"],
+  "[terraform]": {
+    "editor.defaultFormatter": "hashicorp.terraform",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "[terraform-vars]": {
+    "editor.defaultFormatter": "hashicorp.terraform",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "files.exclude": {
+    "**/.terraform": true
+  }
+}

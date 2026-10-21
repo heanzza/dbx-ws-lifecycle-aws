@@ -120,6 +120,24 @@ make down ENV=local-test
 
 CI や恒久運用ではサービスプリンシパル (`client_id` / `client_secret`) を使います。
 
+### VS Code から実行する
+
+`.vscode/tasks.json` を同梱しています。**Cmd+Shift+P → 「Tasks: Run Task」** で以下を選べます
+(環境名を聞かれるので `local-test` 等を入力)。
+
+| タスク | 中身 |
+|---|---|
+| `1. validate (認証不要)` | `make validate` |
+| `2. plan` | `make plan ENV=<環境名>` |
+| `3. up (作成 + ユーザー + データ投入)` | `make up ENV=<環境名>` |
+| `4. outputs (URL等を表示)` | `make outputs ENV=<環境名>` |
+| `5. seed のみ再実行` | `make seed ENV=<環境名>` |
+| `9. down (全削除)` | `make down ENV=<環境名>` |
+| `reap (期限切れ一覧)` | `make reap` |
+
+推奨拡張 (`.vscode/extensions.json`): HashiCorp Terraform / Python / Makefile Tools / Databricks。
+Terraform 拡張の補完を効かせるため、`stack/` をルートモジュールとして設定済みです。
+
 ## 使い方
 
 ```bash

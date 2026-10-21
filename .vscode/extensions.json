@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "hashicorp.terraform",
+    "ms-python.python",
+    "ms-vscode.makefile-tools",
+    "databricks.databricks"
+  ]
+}

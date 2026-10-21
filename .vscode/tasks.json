@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "envName",
+      "type": "promptString",
+      "description": "対象の環境名 (envs/ 配下のディレクトリ名)",
+      "default": "workshop-sample"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "1. validate (認証不要)",
+      "type": "shell",
+      "command": "make validate",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "2. plan",
+      "type": "shell",
+      "command": "make plan ENV=${input:envName}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "3. up (作成 + ユーザー + データ投入)",
+      "type": "shell",
+      "command": "make up ENV=${input:envName}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "4. outputs (URL等を表示)",
+      "type": "shell",
+      "command": "make outputs ENV=${input:envName}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "5. seed のみ再実行",
+      "type": "shell",
+      "command": "make seed ENV=${input:envName}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "9. down (全削除)",
+      "type": "shell",
+      "command": "make down ENV=${input:envName}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "reap (期限切れ一覧・削除しない)",
+      "type": "shell",
+      "command": "make reap",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}
